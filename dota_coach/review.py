@@ -29,7 +29,7 @@ async def fetch_metrics(od, match_id, account_id=None, hero_id=None):
     player = metrics.find_player(match, account_id, hero_id)
     if player is None:
         raise OpenDotaError("Player not found in that match (private profile, or wrong id/hero).")
-    m = metrics.compute_metrics(match, player, await od.hero_names(), await od.item_costs())
+    m = metrics.compute_metrics(match, player, await od.hero_names(), await od.items())
     return m, player.get("account_id")
 
 

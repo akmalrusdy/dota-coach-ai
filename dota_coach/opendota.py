@@ -56,8 +56,12 @@ class OpenDota:
                 return h["id"]
         return None
 
-    async def item_costs(self):
+    async def items(self):
+        """{item: {"cost", "components"}} from OpenDota constants."""
         if self._items is None:
             data = await self._req("GET", "/constants/items")
-            self._items = {k: v.get("cost") or 0 for k, v in data.items()}
+            self._items = {
+                k: {"cost": v.get("cost") or 0, "components": v.get("components") or []}
+                for k, v in data.items()
+            }
         return self._items

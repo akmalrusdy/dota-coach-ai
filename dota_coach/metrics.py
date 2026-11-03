@@ -58,13 +58,16 @@ def death_times(match, p, hero_names):
     return sorted(times)
 
 
-def core_item_timings(p, item_costs):
+def core_item_timings(p, items):
+    log = p.get("purchase_log") or []
+    # assembling an item also logs its parts at the same second (e.g. kaya + yasha_and_kaya): keep the result only
+    parts = {(e["time"], c) for e in log for c in items.get(e["key"], {}).get("components", [])}
     seen, out = set(), []
-    for e in p.get("purchase_log") or []:
+    for e in log:
         key = e["key"]
-        if key in seen or key.startswith("recipe_"):
+        if key in seen or key.startswith("recipe_") or (e["time"], key) in parts:
             continue
-        if item_costs.get(key, 0) >= CORE_ITEM_MIN_COST:
+        if items.get(key, {}).get("cost", 0) >= CORE_ITEM_MIN_COST:
             seen.add(key)
             out.append({"item": key, "minute": round(e["time"] / 60, 1)})
     return out
@@ -75,7 +78,7 @@ def _pct(b, key):
     return None if not v else {"value": round(v["raw"], 2), "percentile": round(v["pct"] * 100)}
 
 
-def compute_metrics(match, player, hero_names, item_costs):
+def compute_metrics(match, player, hero_names, items):
     foe = lane_opponent(match, player)
     team = [q for q in match["players"] if _is_radiant(q) == _is_radiant(player)]
     team_kills = sum(q.get("kills") or 0 for q in team)
@@ -122,7 +125,7 @@ def compute_metrics(match, player, hero_names, item_costs):
             k: _pct(bench, k)
             for k in ("gold_per_min", "xp_per_min", "last_hits_per_min", "hero_damage_per_min")
         },
-        "core_items": core_item_timings(player, item_costs),
+        "core_items": core_item_timings(player, items),
         "death_times_sec": deaths,
         "deaths_before_10": sum(t < 600 for t in deaths),
         "deaths_before_20": sum(t < 1200 for t in deaths),

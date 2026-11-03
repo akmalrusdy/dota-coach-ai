@@ -47,7 +47,7 @@ def test_core_items_are_expensive_unique_and_ordered():
     items = M["core_items"]
     names = [i["item"] for i in items]
     assert len(names) == len(set(names))
-    assert all(ITEMS[n] >= 2000 for n in names)
+    assert all(ITEMS[n]["cost"] >= 2000 for n in names)
     assert [i["minute"] for i in items] == sorted(i["minute"] for i in items)
 
 
@@ -68,3 +68,12 @@ def test_short_match_gives_none_not_crash():
 
 def test_json_serialisable():
     json.dumps(M)
+
+
+def test_combined_item_not_double_counted():
+    p = {"purchase_log": [
+        {"time": 1439, "key": "yasha"},
+        {"time": 1856, "key": "kaya"},
+        {"time": 1856, "key": "yasha_and_kaya"},
+    ]}
+    assert [i["item"] for i in metrics.core_item_timings(p, ITEMS)] == ["yasha", "yasha_and_kaya"]
