@@ -2,6 +2,7 @@
   python -m dota_coach.cli 8123456789 --player 123456789
   python -m dota_coach.cli 8123456789 --player "Invoker" --no-llm
   python -m dota_coach.cli --last 123456789
+  python -m dota_coach.cli --trend 123456789 [--n 10]
 """
 import argparse
 import asyncio
@@ -11,12 +12,15 @@ import os
 from dotenv import load_dotenv
 
 from .opendota import OpenDota, OpenDotaError
-from .review import advise, fetch_metrics, resolve_player, to_account_id
+from .review import advise, build_trend, fetch_metrics, resolve_player, to_account_id
 
 
 async def run(args):
     od = OpenDota(os.getenv("OPENDOTA_API_KEY"))
     try:
+        if args.trend:
+            print(await build_trend(od, to_account_id(int(args.trend)), args.n))
+            return
         if args.last:
             account_id = to_account_id(int(args.last))
             match_id, hero_id = await od.recent_match_id(account_id), None
@@ -39,10 +43,13 @@ def main():
     ap.add_argument("match_id", nargs="?", type=int)
     ap.add_argument("--player", help="account id or hero name")
     ap.add_argument("--last", metavar="ACCOUNT_ID", help="review this account's latest match")
+    ap.add_argument("--trend", metavar="ACCOUNT_ID", help="trend over recent ranked mid matches")
+    ap.add_argument("--n", type=int, default=10, help="matches for --trend (max 20)")
     ap.add_argument("--no-llm", action="store_true", help="print metrics only")
     args = ap.parse_args()
-    if not args.last and not (args.match_id and args.player):
-        ap.error("give MATCH_ID and --player, or --last ACCOUNT_ID")
+    if not args.trend and not args.last and not (args.match_id and args.player):
+        ap.error("give MATCH_ID and --player, --last ACCOUNT_ID, or --trend ACCOUNT_ID")
+    args.n = max(1, min(args.n, 20))
     asyncio.run(run(args))
 
 

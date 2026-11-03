@@ -31,6 +31,7 @@ def test_lane_opponent_and_result():
     assert foe["hero_id"] == 106
     diff = MID["gold_t"][10] - foe["gold_t"][10]
     assert M["lane"]["nw_diff_at_10"] == diff
+    assert M["lane"]["opponent_lh_at_10"] == foe["lh_t"][10]
     expected = "won" if diff >= 300 else "lost" if diff <= -300 else "even"
     assert M["lane"]["result"] == expected
 

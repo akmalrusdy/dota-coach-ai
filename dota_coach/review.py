@@ -1,7 +1,7 @@
 """Review pipeline shared by the Discord bot and the CLI (no Discord imports)."""
 import json
 
-from . import llm, metrics, prompts, validate
+from . import llm, metrics, prompts, trend, validate
 from .opendota import OpenDotaError
 
 STEAM64_BASE = 76561197960265728
@@ -34,12 +34,41 @@ async def fetch_metrics(od, match_id, account_id=None, hero_id=None):
 
 
 async def advise(m):
+    return await _ask_validated(prompts.REVIEW_SYSTEM, m)
+
+
+async def _ask_validated(system, payload):
     reply = await llm.ask([
-        {"role": "system", "content": prompts.REVIEW_SYSTEM},
-        {"role": "user", "content": "Metrics:\n" + json.dumps(m)},
+        {"role": "system", "content": system},
+        {"role": "user", "content": "Metrics:\n" + json.dumps(payload)},
     ])
-    advice = reply.content or "No advice generated."
-    bad = validate.unverified_numbers(advice, m)
+    text = reply.content or "No advice generated."
+    bad = validate.unverified_numbers(text, payload)
     if bad:
-        advice += f"\n-# Unverified numbers (not in the metrics): {', '.join(bad)}"
-    return advice
+        text += f"\n-# Unverified numbers (not in the metrics): {', '.join(bad)}"
+    return text
+
+
+async def build_trend(od, account_id, want=10, lobby_type=7, scan=40):
+    """Trend over the last `want` parsed ranked mid matches. Unparsed ones get a parse request."""
+    rows = await od.recent_matches(account_id, scan, lobby_type=lobby_type)
+    names, items = await od.hero_names(), await od.items()
+    ms, unparsed, not_mid = [], 0, 0
+    for r in rows:
+        if len(ms) >= want:
+            break
+        match = await od.match(r["match_id"])
+        if not metrics.is_parsed(match):
+            unparsed += 1
+            await od.request_parse(r["match_id"])
+            continue
+        p = metrics.find_player(match, account_id)
+        if p is None or p.get("lane_role") != 2 or p.get("is_roaming"):
+            not_mid += 1
+            continue
+        ms.append(metrics.compute_metrics(match, p, names, items))
+    head = f"**Trend: {len(ms)} ranked mid matches** ({unparsed} unparsed, parse requested; {not_mid} non-mid skipped)"
+    if not ms:
+        raise OpenDotaError(head + "\nNo parsed ranked mid matches yet. Retry in a few minutes.")
+    agg = trend.summarize(ms)
+    return head + "\n" + await _ask_validated(prompts.TREND_SYSTEM, agg)

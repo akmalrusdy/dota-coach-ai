@@ -90,6 +90,7 @@ def compute_metrics(match, player, hero_names, items):
         lane = {
             "opponent_hero": hero_names.get(foe["hero_id"]),
             "nw_diff_at_10": diff,
+            "opponent_lh_at_10": _at(foe["lh_t"], 10),
             "result": "won" if diff >= WON_LANE_NW else "lost" if diff <= -WON_LANE_NW else "even",
         }
 

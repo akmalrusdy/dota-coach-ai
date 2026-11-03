@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from .db import DB
 from .opendota import OpenDota, OpenDotaError
-from .review import advise, fetch_metrics, resolve_player, to_account_id
+from .review import advise, build_trend, fetch_metrics, resolve_player, to_account_id
 
 LIMIT = 1990
 
@@ -89,6 +89,18 @@ async def _last(discord_id):
 @tree.command(description="Review your most recent match")
 async def lastmatch(interaction: discord.Interaction):
     await respond(interaction, _last(interaction.user.id))
+
+
+@tree.command(description="Trend over your recent ranked mid matches (takes a minute or two)")
+@app_commands.describe(matches="How many matches, 5-20 (default 10)")
+async def trend(interaction: discord.Interaction, matches: app_commands.Range[int, 5, 20] = 10):
+    async def run():
+        account_id = db.account_id(interaction.user.id)
+        if account_id is None:
+            raise OpenDotaError("Link your account first with `/link <steam_id>`.")
+        return await build_trend(od, account_id, matches)
+
+    await respond(interaction, run())
 
 
 @bot.event

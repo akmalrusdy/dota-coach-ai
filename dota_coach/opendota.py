@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 import httpx
 
 BASE = "https://api.opendota.com/api"
@@ -13,12 +16,20 @@ class OpenDota:
         self._http = httpx.AsyncClient(base_url=BASE, timeout=20)
         self._heroes = None
         self._items = None
+        self._last = 0.0
 
     async def _req(self, method, path, **params):
-        try:
-            r = await self._http.request(method, path, params={**self._params, **params})
-        except httpx.HTTPError:
-            raise OpenDotaError("OpenDota unreachable, try again shortly.")
+        for attempt in range(3):
+            # ponytail: ~1 req/s keeps bursts under the free per-minute limit; not shared across processes
+            await asyncio.sleep(max(0.0, 1.1 - (time.monotonic() - self._last)))
+            self._last = time.monotonic()
+            try:
+                r = await self._http.request(method, path, params={**self._params, **params})
+            except httpx.HTTPError:
+                raise OpenDotaError("OpenDota unreachable, try again shortly.")
+            if r.status_code != 429 or attempt == 2:
+                break
+            await asyncio.sleep(65)  # per-minute window
         if r.status_code == 404:
             raise OpenDotaError("Not found on OpenDota (wrong id, or match data is private).")
         if r.status_code == 429:
@@ -38,6 +49,9 @@ class OpenDota:
         if not rows:
             raise OpenDotaError("No matches found. Enable 'Expose Public Match Data' in Dota settings.")
         return rows[0]["match_id"]
+
+    async def recent_matches(self, account_id, limit=40, **filters):
+        return await self._req("GET", f"/players/{account_id}/matches", limit=limit, **filters)
 
     async def hero_names(self):
         """{hero_id: npc name}; plus localized lookup via hero_localized()."""
