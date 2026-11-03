@@ -18,6 +18,8 @@ def _leaves(x):
             yield from _leaves(v)
     elif isinstance(x, (int, float)) and not isinstance(x, bool):
         yield abs(float(x))
+    elif isinstance(x, str):  # e.g. patch-note text: numbers quoted from it are grounded
+        yield from (float(n) for n in NUM.findall(x))
 
 
 def _allowed(metrics):

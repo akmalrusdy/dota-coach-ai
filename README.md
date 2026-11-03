@@ -33,3 +33,6 @@ Later phases slot in as new modules (e.g. `draft.py`, `team.py`) plus commands i
 - Public match data only. No hidden enemy info.
 - Core items = purchases costing >= 2000 gold; compared via OpenDota per-player benchmark percentiles (GPM, XPM, LH/min, hero damage/min). OpenDota `/benchmarks` has no item timings.
 - Lane result: net worth diff vs same-lane enemy at 10:00 (+-300 threshold).
+
+## /draft (phase 2)
+`/draft enemy:"dp, pudge" pool:"od, lina"` ranks your pool by bracket win rate (OpenDota heroStats, 7-day window) + shrunk matchup edge + shrunk personal record. Patch notes for changed heroes come from `data/patch_notes.md`; regenerate with `python -m dota_coach.patch 7.41f`. CLI: `python -m dota_coach.cli --draft "dp" --pool "od,lina" --account <id>`.

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from .db import DB
 from .opendota import OpenDota, OpenDotaError
-from .review import advise, build_trend, fetch_metrics, resolve_player, to_account_id
+from .review import advise, build_draft, build_trend, fetch_metrics, resolve_player, to_account_id
 
 LIMIT = 1990
 
@@ -99,6 +99,19 @@ async def trend(interaction: discord.Interaction, matches: app_commands.Range[in
         if account_id is None:
             raise OpenDotaError("Link your account first with `/link <steam_id>`.")
         return await build_trend(od, account_id, matches)
+
+    await respond(interaction, run())
+
+
+@tree.command(description="Pick suggestions vs the enemy heroes you can already see")
+@app_commands.describe(enemy="Enemy heroes, comma separated", pool="Your candidate heroes, comma separated (default: your most played)")
+async def draft(interaction: discord.Interaction, enemy: str, pool: str = ""):
+    async def run():
+        account_id = db.account_id(interaction.user.id)
+        if account_id is None:
+            raise OpenDotaError("Link your account first with `/link <steam_id>`.")
+        split = lambda t: [x.strip() for x in t.split(",") if x.strip()]
+        return await build_draft(od, account_id, split(enemy), split(pool) or None)
 
     await respond(interaction, run())
 

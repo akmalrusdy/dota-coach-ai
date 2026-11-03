@@ -1,7 +1,8 @@
 """Review pipeline shared by the Discord bot and the CLI (no Discord imports)."""
 import json
+from pathlib import Path
 
-from . import llm, metrics, prompts, trend, validate
+from . import draft, llm, metrics, prompts, trend, validate
 from .opendota import OpenDotaError
 
 STEAM64_BASE = 76561197960265728
@@ -72,3 +73,38 @@ async def build_trend(od, account_id, want=10, lobby_type=7, scan=40):
         raise OpenDotaError(head + "\nNo parsed ranked mid matches yet. Retry in a few minutes.")
     agg = trend.summarize(ms)
     return head + "\n" + await _ask_validated(prompts.TREND_SYSTEM, agg)
+
+
+PATCH_NOTES = Path(__file__).resolve().parent.parent / "data" / "patch_notes.md"
+
+
+async def build_draft(od, account_id, enemies, pool=None, top=3):
+    """Rank pool heroes (default: the player's most played) against known enemy heroes."""
+    labels = await od.hero_labels()
+    ids = {}
+    for name in enemies + (pool or []):
+        hid = await od.hero_id_by_name(name)
+        if hid is None:
+            raise OpenDotaError(f"Unknown hero '{name}'.")
+        ids[name] = hid
+    enemy_ids = [ids[n] for n in enemies]
+    personal = await od.player_heroes(account_id, lobby_type=7)
+    if pool:
+        cands = [ids[n] for n in pool]
+    else:
+        cands = sorted(personal, key=lambda h: -personal[h][0])[:8]
+    cands = [h for h in cands if h not in enemy_ids]
+    if not cands:
+        raise OpenDotaError("No candidate heroes. Pass a pool.")
+    stats, tier = await od.hero_stats(), await od.rank_tier(account_id)
+    matchups = {h: await od.matchups(h) for h in cands}
+    ranked = draft.rank_candidates(cands, stats, matchups, personal, enemy_ids, tier)[:top]
+    for r in ranked:
+        r["hero"] = labels[r["hero"]]
+        for m in r["matchups"]:
+            m["enemy"] = labels[m["enemy"]]
+    payload = {"rank_tier": tier, "enemies": [labels[h] for h in enemy_ids], "candidates": ranked}
+    if PATCH_NOTES.exists():
+        names = [r["hero"] for r in ranked] + payload["enemies"]
+        payload["patch_notes"] = draft.hero_sections(PATCH_NOTES.read_text(), names)
+    return await _ask_validated(prompts.DRAFT_SYSTEM, payload)

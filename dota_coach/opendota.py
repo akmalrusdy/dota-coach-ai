@@ -4,6 +4,11 @@ import time
 import httpx
 
 BASE = "https://api.opendota.com/api"
+ALIASES = {
+    "od": "outworld", "dp": "death prophet", "qop": "queen of pain", "sf": "shadow fiend",
+    "ta": "templar assassin", "cm": "crystal maiden", "am": "anti-mage", "np": "nature's prophet",
+    "tb": "terrorblade", "ss": "shadow shaman", "wk": "wraith king", "bs": "bloodseeker",
+}
 
 
 class OpenDotaError(Exception):
@@ -16,6 +21,7 @@ class OpenDota:
         self._http = httpx.AsyncClient(base_url=BASE, timeout=20)
         self._heroes = None
         self._items = None
+        self._stats = None
         self._last = 0.0
 
     async def _req(self, method, path, **params):
@@ -53,6 +59,30 @@ class OpenDota:
     async def recent_matches(self, account_id, limit=40, **filters):
         return await self._req("GET", f"/players/{account_id}/matches", limit=limit, **filters)
 
+    async def hero_stats(self):
+        """{hero_id: heroStats row}: per-rank-bracket picks/wins over the recent window."""
+        if self._stats is None:
+            self._stats = {h["id"]: h for h in await self._req("GET", "/heroStats")}
+        return self._stats
+
+    async def matchups(self, hero_id):
+        """{enemy_hero_id: (games, wins)} for hero_id. Thin sample: shrink before use."""
+        rows = await self._req("GET", f"/heroes/{hero_id}/matchups")
+        return {r["hero_id"]: (r["games_played"], r["wins"]) for r in rows}
+
+    async def player_heroes(self, account_id, **filters):
+        """{hero_id: (games, wins)} from the player's own history."""
+        rows = await self._req("GET", f"/players/{account_id}/heroes", **filters)
+        return {int(r["hero_id"]): (r["games"], r["win"]) for r in rows}
+
+    async def rank_tier(self, account_id):
+        return (await self._req("GET", f"/players/{account_id}")).get("rank_tier")
+
+    async def hero_labels(self):
+        """{hero_id: display name}"""
+        await self.hero_names()
+        return {h["id"]: h["localized_name"] for h in self._heroes}
+
     async def hero_names(self):
         """{hero_id: npc name}; plus localized lookup via hero_localized()."""
         if self._heroes is None:
@@ -61,7 +91,7 @@ class OpenDota:
 
     async def hero_id_by_name(self, text):
         await self.hero_names()
-        text = text.lower().strip()
+        text = ALIASES.get(text.lower().strip(), text.lower().strip())
         for h in self._heroes:
             if text in (h["localized_name"].lower(), h["name"].removeprefix("npc_dota_hero_")):
                 return h["id"]
