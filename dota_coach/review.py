@@ -88,11 +88,11 @@ async def build_draft(od, account_id, enemies, pool=None, top=3):
             raise OpenDotaError(f"Unknown hero '{name}'.")
         ids[name] = hid
     enemy_ids = [ids[n] for n in enemies]
-    personal = await od.player_heroes(account_id, lobby_type=7)
+    personal = await od.player_heroes(account_id, lobby_type=7, lane_role=2)  # mid only
     if pool:
         cands = [ids[n] for n in pool]
     else:
-        cands = sorted(personal, key=lambda h: -personal[h][0])[:8]
+        cands = [h for h in sorted(personal, key=lambda h: -personal[h][0]) if personal[h][0] >= 3][:8]  # 1-2 game heroes are noise
     cands = [h for h in cands if h not in enemy_ids]
     if not cands:
         raise OpenDotaError("No candidate heroes. Pass a pool.")
