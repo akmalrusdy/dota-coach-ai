@@ -36,3 +36,23 @@ def summarize(ms):
         "median_deaths_before_20_in_losses": _med([m["deaths_before_20"] for m in losses]),
         "heroes": heroes,
     }
+
+
+def by_opponent(ms):
+    """{opponent npc name: aggregate} over matches that have a lane opponent, most frequent first."""
+    groups = {}
+    for m in ms:
+        opp = (m.get("lane") or {}).get("opponent_hero")
+        if opp:
+            groups.setdefault(opp, []).append(m)
+    out = {}
+    for opp, g in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+        s = summarize(g)
+        out[opp] = {
+            "games": s["matches"], "wins": s["wins"], "lane_results": s["lane_results"],
+            "median_nw_diff_at_10": s["median_nw_diff_at_10"],
+            "median_lh_diff_vs_opponent_at_10": s["median_lh_diff_vs_opponent_at_10"],
+            "median_deaths_before_10": s["median_deaths_before_10"],
+            "games_with_death_before_10": s["games_with_death_before_10"],
+        }
+    return out

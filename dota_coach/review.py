@@ -50,9 +50,9 @@ async def _ask_validated(system, payload):
     return text
 
 
-async def build_trend(od, account_id, want=10, lobby_type=7, scan=40):
-    """Trend over the last `want` parsed ranked mid matches. Unparsed ones get a parse request."""
-    rows = await od.recent_matches(account_id, scan, lobby_type=lobby_type)
+async def mid_matches(od, account_id, want, scan=40, **filters):
+    """Last `want` parsed ranked mid matches (metrics). Unparsed ones get a parse request."""
+    rows = await od.recent_matches(account_id, scan, lobby_type=7, **filters)
     names, items = await od.hero_names(), await od.items()
     ms, unparsed, not_mid = [], 0, 0
     for r in rows:
@@ -68,6 +68,12 @@ async def build_trend(od, account_id, want=10, lobby_type=7, scan=40):
             not_mid += 1
             continue
         ms.append(metrics.compute_metrics(match, p, names, items))
+    return ms, unparsed, not_mid
+
+
+async def build_trend(od, account_id, want=10):
+    """Trend over the last `want` parsed ranked mid matches."""
+    ms, unparsed, not_mid = await mid_matches(od, account_id, want)
     head = f"**Trend: {len(ms)} ranked mid matches** ({unparsed} unparsed, parse requested; {not_mid} non-mid skipped)"
     if not ms:
         raise OpenDotaError(head + "\nNo parsed ranked mid matches yet. Retry in a few minutes.")
@@ -108,3 +114,38 @@ async def build_draft(od, account_id, enemies, pool=None, top=3):
         names = [r["hero"] for r in ranked] + payload["enemies"]
         payload["patch_notes"] = draft.hero_sections(PATCH_NOTES.read_text(), names)
     return await _ask_validated(prompts.DRAFT_SYSTEM, payload)
+
+
+async def build_laneplan(od, account_id, hero, enemy=None, top=3, want=20):
+    """Lane plan for `hero` (mid) vs `enemy`, or vs the opponents the player met most often on that hero."""
+    hid = await od.hero_id_by_name(hero)
+    if hid is None:
+        raise OpenDotaError(f"Unknown hero '{hero}'.")
+    labels, names = await od.hero_labels(), await od.hero_names()
+    ms, unparsed, _ = await mid_matches(od, account_id, want, scan=60, hero_id=hid)
+    if not ms and not enemy:
+        raise OpenDotaError(f"No parsed ranked mid matches on {labels[hid]} yet ({unparsed} unparsed, parse requested).")
+    seen = trend.by_opponent(ms)
+    if enemy:
+        eid = await od.hero_id_by_name(enemy)
+        if eid is None:
+            raise OpenDotaError(f"Unknown hero '{enemy}'.")
+        opps = [eid]
+    else:
+        opps = [await od.hero_id_by_name(k.removeprefix("npc_dota_hero_")) for k in list(seen)[:top]]
+    glob, stats = await od.matchups(hid), await od.hero_stats()
+    w, p = draft.bracket_record(stats[hid], await od.rank_tier(account_id))
+    plans = []
+    for eid in opps:
+        g, wn = glob.get(eid, (0, 0))
+        mine = seen.get(names[eid], {"games": 0})
+        plans.append({
+            "enemy": labels[eid], "your_history_vs_enemy": mine,
+            "all_players_matchup": {"games": g, "wins": wn,
+                                    "edge_pct": round(100 * (draft.shrink(wn, g, w / p, draft.K_MATCHUP) - w / p), 1)},
+        })
+    payload = {"hero": labels[hid], "your_ranked_mid_games_on_hero": len(ms), "matchups": plans}
+    if PATCH_NOTES.exists():
+        payload["patch_notes"] = draft.hero_sections(PATCH_NOTES.read_text(), [labels[hid]] + [x["enemy"] for x in plans])
+    head = f"**Lane plan: {labels[hid]}** ({len(ms)} parsed ranked mid games, {unparsed} unparsed)"
+    return head + "\n" + await _ask_validated(prompts.LANEPLAN_SYSTEM, payload)

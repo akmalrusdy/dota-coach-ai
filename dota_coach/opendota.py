@@ -33,9 +33,9 @@ class OpenDota:
                 r = await self._http.request(method, path, params={**self._params, **params})
             except httpx.HTTPError:
                 raise OpenDotaError("OpenDota unreachable, try again shortly.")
-            if r.status_code != 429 or attempt == 2:
+            if r.status_code != 429 and r.status_code < 500 or attempt == 2:
                 break
-            await asyncio.sleep(65)  # per-minute window
+            await asyncio.sleep(65 if r.status_code == 429 else 3)  # 429: per-minute window; 5xx: transient
         if r.status_code == 404:
             raise OpenDotaError("Not found on OpenDota (wrong id, or match data is private).")
         if r.status_code == 429:

@@ -32,3 +32,15 @@ def test_missing_lane_data_does_not_crash():
     x["lane"] = None
     s = summarize([x])
     assert s["median_nw_diff_at_10"] is None and s["median_lh_diff_vs_opponent_at_10"] is None
+
+
+def test_by_opponent_groups_and_orders():
+    from dota_coach.trend import by_opponent
+    a = [m(True, "won", 700, 44, 40, 0, 1), m(False, "lost", -600, 30, 40, 1, 2), m(False, "lost", -800, 32, 40, 2, 3)]
+    for x in a[:2]:
+        x["lane"]["opponent_hero"] = "npc_dota_hero_death_prophet"
+    a[2]["lane"]["opponent_hero"] = "npc_dota_hero_pudge"
+    r = by_opponent(a)
+    assert list(r) == ["npc_dota_hero_death_prophet", "npc_dota_hero_pudge"]
+    assert r["npc_dota_hero_death_prophet"]["games"] == 2 and r["npc_dota_hero_death_prophet"]["wins"] == 1
+    assert r["npc_dota_hero_death_prophet"]["lane_results"] == {"won": 1, "even": 0, "lost": 1}

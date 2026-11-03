@@ -12,12 +12,15 @@ import os
 from dotenv import load_dotenv
 
 from .opendota import OpenDota, OpenDotaError
-from .review import advise, build_draft, build_trend, fetch_metrics, resolve_player, to_account_id
+from .review import advise, build_draft, build_laneplan, build_trend, fetch_metrics, resolve_player, to_account_id
 
 
 async def run(args):
     od = OpenDota(os.getenv("OPENDOTA_API_KEY"))
     try:
+        if args.laneplan:
+            print(await build_laneplan(od, to_account_id(int(args.account)), args.laneplan, args.enemy or None))
+            return
         if args.draft:
             split = lambda t: [x.strip() for x in t.split(",") if x.strip()]
             print(await build_draft(od, to_account_id(int(args.account)), split(args.draft), split(args.pool) or None))
@@ -50,13 +53,15 @@ def main():
     ap.add_argument("--trend", metavar="ACCOUNT_ID", help="trend over recent ranked mid matches")
     ap.add_argument("--draft", metavar="ENEMIES", help="comma separated enemy heroes; needs --account")
     ap.add_argument("--pool", default="", help="comma separated candidate heroes for --draft")
+    ap.add_argument("--laneplan", metavar="HERO", help="your mid hero; needs --account; optional --enemy")
+    ap.add_argument("--enemy", default="", help="enemy mid for --laneplan")
     ap.add_argument("--account", help="account id for --draft")
     ap.add_argument("--n", type=int, default=10, help="matches for --trend (max 20)")
     ap.add_argument("--no-llm", action="store_true", help="print metrics only")
     args = ap.parse_args()
-    if args.draft and not args.account:
-        ap.error("--draft needs --account")
-    if not args.draft and not args.trend and not args.last and not (args.match_id and args.player):
+    if (args.draft or args.laneplan) and not args.account:
+        ap.error("--draft/--laneplan need --account")
+    if not args.draft and not args.laneplan and not args.trend and not args.last and not (args.match_id and args.player):
         ap.error("give MATCH_ID and --player, --last ACCOUNT_ID, or --trend ACCOUNT_ID")
     args.n = max(1, min(args.n, 20))
     asyncio.run(run(args))

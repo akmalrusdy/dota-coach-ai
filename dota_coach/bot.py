@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from .db import DB
 from .opendota import OpenDota, OpenDotaError
-from .review import advise, build_draft, build_trend, fetch_metrics, resolve_player, to_account_id
+from .review import advise, build_draft, build_laneplan, build_trend, fetch_metrics, resolve_player, to_account_id
 
 LIMIT = 1990
 
@@ -112,6 +112,18 @@ async def draft(interaction: discord.Interaction, enemy: str, pool: str = ""):
             raise OpenDotaError("Link your account first with `/link <steam_id>`.")
         split = lambda t: [x.strip() for x in t.split(",") if x.strip()]
         return await build_draft(od, account_id, split(enemy), split(pool) or None)
+
+    await respond(interaction, run())
+
+
+@tree.command(description="Lane plan for your mid hero vs an enemy, or vs the enemies you meet most (takes a minute)")
+@app_commands.describe(hero="Your hero, e.g. od or lina", enemy="Enemy mid (default: your most frequent opponents on that hero)")
+async def laneplan(interaction: discord.Interaction, hero: str, enemy: str = ""):
+    async def run():
+        account_id = db.account_id(interaction.user.id)
+        if account_id is None:
+            raise OpenDotaError("Link your account first with `/link <steam_id>`.")
+        return await build_laneplan(od, account_id, hero, enemy or None)
 
     await respond(interaction, run())
 
