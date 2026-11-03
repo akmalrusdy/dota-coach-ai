@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 
@@ -6,11 +5,10 @@ import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
-from . import llm, metrics, prompts
 from .db import DB
 from .opendota import OpenDota, OpenDotaError
+from .review import advise, fetch_metrics, resolve_player, to_account_id
 
-STEAM64_BASE = 76561197960265728
 LIMIT = 1990
 
 load_dotenv()
@@ -19,10 +17,6 @@ bot = discord.Client(intents=discord.Intents.default())
 tree = app_commands.CommandTree(bot)
 db = DB()
 od = OpenDota(os.getenv("OPENDOTA_API_KEY"))
-
-
-def to_account_id(steam_id: int) -> int:
-    return steam_id - STEAM64_BASE if steam_id > STEAM64_BASE else steam_id
 
 
 def chunks(text, limit=LIMIT):
@@ -41,34 +35,15 @@ def chunks(text, limit=LIMIT):
 
 
 async def build_review(discord_id, match_id, player_arg=None):
-    account_id = hero_id = None
     if player_arg:
-        if player_arg.isdigit():
-            account_id = to_account_id(int(player_arg))
-        else:
-            hero_id = await od.hero_id_by_name(player_arg)
-            if hero_id is None:
-                raise OpenDotaError(f"Unknown hero '{player_arg}'.")
+        account_id, hero_id = await resolve_player(od, player_arg)
     else:
-        account_id = db.account_id(discord_id)
+        account_id, hero_id = db.account_id(discord_id), None
         if account_id is None:
             raise OpenDotaError("Link your account first with `/link <steam_id>`, or pass a player/hero.")
-
-    match = await od.match(match_id)
-    if not metrics.is_parsed(match):
-        await od.request_parse(match_id)
-        raise OpenDotaError("Match not parsed yet. Parse requested, retry in a few minutes.")
-    player = metrics.find_player(match, account_id, hero_id)
-    if player is None:
-        raise OpenDotaError("Player not found in that match (private profile, or wrong id/hero).")
-
-    m = metrics.compute_metrics(match, player, await od.hero_names(), await od.item_costs())
-    reply = await llm.ask([
-        {"role": "system", "content": prompts.REVIEW_SYSTEM},
-        {"role": "user", "content": "Metrics:\n" + json.dumps(m)},
-    ])
-    advice = reply.content or "No advice generated."
-    db.save_review(discord_id, player.get("account_id"), match_id, m, advice)
+    m, player_account = await fetch_metrics(od, match_id, account_id, hero_id)
+    advice = await advise(m)
+    db.save_review(discord_id, player_account, match_id, m, advice)
     return f"**Match {match_id} - {m['hero']}** ({'W' if m['won'] else 'L'})\n{advice}"
 
 

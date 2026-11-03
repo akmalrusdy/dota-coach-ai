@@ -1,0 +1,50 @@
+"""Terminal review, no Discord. Examples:
+  python -m dota_coach.cli 8123456789 --player 123456789
+  python -m dota_coach.cli 8123456789 --player "Invoker" --no-llm
+  python -m dota_coach.cli --last 123456789
+"""
+import argparse
+import asyncio
+import json
+import os
+
+from dotenv import load_dotenv
+
+from .opendota import OpenDota, OpenDotaError
+from .review import advise, fetch_metrics, resolve_player, to_account_id
+
+
+async def run(args):
+    od = OpenDota(os.getenv("OPENDOTA_API_KEY"))
+    try:
+        if args.last:
+            account_id = to_account_id(int(args.last))
+            match_id, hero_id = await od.recent_match_id(account_id), None
+        else:
+            match_id = args.match_id
+            account_id, hero_id = await resolve_player(od, args.player)
+        m, _ = await fetch_metrics(od, match_id, account_id, hero_id)
+        print(f"== match {match_id} metrics ==")
+        print(json.dumps(m, indent=2))
+        if not args.no_llm:
+            print("\n== advice ==")
+            print(await advise(m))
+    except OpenDotaError as e:
+        raise SystemExit(str(e))
+
+
+def main():
+    load_dotenv()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("match_id", nargs="?", type=int)
+    ap.add_argument("--player", help="account id or hero name")
+    ap.add_argument("--last", metavar="ACCOUNT_ID", help="review this account's latest match")
+    ap.add_argument("--no-llm", action="store_true", help="print metrics only")
+    args = ap.parse_args()
+    if not args.last and not (args.match_id and args.player):
+        ap.error("give MATCH_ID and --player, or --last ACCOUNT_ID")
+    asyncio.run(run(args))
+
+
+if __name__ == "__main__":
+    main()
