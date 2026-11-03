@@ -22,6 +22,7 @@ class OpenDota:
         self._heroes = None
         self._items = None
         self._stats = None
+        self._matches = {}
         self._last = 0.0
 
     async def _req(self, method, path, **params):
@@ -45,7 +46,13 @@ class OpenDota:
         return r.json()
 
     async def match(self, match_id):
-        return await self._req("GET", f"/matches/{match_id}")
+        # parsed matches never change; cache so repeated /laneplan runs don't refetch
+        if match_id not in self._matches:
+            m = await self._req("GET", f"/matches/{match_id}")
+            if all(p.get("gold_t") for p in m.get("players") or [{}]):
+                self._matches[match_id] = m
+            return m
+        return self._matches[match_id]
 
     async def request_parse(self, match_id):
         await self._req("POST", f"/request/{match_id}")

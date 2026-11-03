@@ -98,7 +98,7 @@ async def trend(interaction: discord.Interaction, matches: app_commands.Range[in
         account_id = db.account_id(interaction.user.id)
         if account_id is None:
             raise OpenDotaError("Link your account first with `/link <steam_id>`.")
-        return await build_trend(od, account_id, matches)
+        return await build_trend(od, account_id, matches, cache=db)
 
     await respond(interaction, run())
 
@@ -123,7 +123,7 @@ async def laneplan(interaction: discord.Interaction, hero: str, enemy: str = "")
         account_id = db.account_id(interaction.user.id)
         if account_id is None:
             raise OpenDotaError("Link your account first with `/link <steam_id>`.")
-        return await build_laneplan(od, account_id, hero, enemy or None)
+        return await build_laneplan(od, account_id, hero, enemy or None, cache=db)
 
     await respond(interaction, run())
 

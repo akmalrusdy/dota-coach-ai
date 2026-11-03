@@ -44,3 +44,13 @@ def test_by_opponent_groups_and_orders():
     assert list(r) == ["npc_dota_hero_death_prophet", "npc_dota_hero_pudge"]
     assert r["npc_dota_hero_death_prophet"]["games"] == 2 and r["npc_dota_hero_death_prophet"]["wins"] == 1
     assert r["npc_dota_hero_death_prophet"]["lane_results"] == {"won": 1, "even": 0, "lost": 1}
+
+
+def test_db_metrics_cache(tmp_path):
+    from dota_coach.db import DB
+    db = DB(str(tmp_path / "t.db"))
+    assert db.get_metrics(1, 10) == (False, None)
+    db.save_metrics(1, 10, {"hero": "x"})
+    db.save_metrics(1, 11, None)  # parsed, not mid
+    assert db.get_metrics(1, 10) == (True, {"hero": "x"})
+    assert db.get_metrics(1, 11) == (True, None)

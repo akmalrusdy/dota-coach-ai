@@ -50,30 +50,37 @@ async def _ask_validated(system, payload):
     return text
 
 
-async def mid_matches(od, account_id, want, scan=40, **filters):
-    """Last `want` parsed ranked mid matches (metrics). Unparsed ones get a parse request."""
-    rows = await od.recent_matches(account_id, scan, lobby_type=7, **filters)
+async def mid_matches(od, account_id, want, scan=40, cache=None, **filters):
+    """Last `want` parsed ranked mid matches (metrics). Unparsed ones get a parse request.
+    cache (DB) keeps computed metrics so each match is downloaded once; benchmark percentiles freeze at first fetch."""
+    rows = await od.recent_matches(account_id, scan, lobby_type=7, lane_role=2, **filters)  # skip non-mid before downloading
     names, items = await od.hero_names(), await od.items()
     ms, unparsed, not_mid = [], 0, 0
     for r in rows:
         if len(ms) >= want:
             break
-        match = await od.match(r["match_id"])
-        if not metrics.is_parsed(match):
-            unparsed += 1
-            await od.request_parse(r["match_id"])
-            continue
-        p = metrics.find_player(match, account_id)
-        if p is None or p.get("lane_role") != 2 or p.get("is_roaming"):
+        cached, m = cache.get_metrics(account_id, r["match_id"]) if cache else (False, None)
+        if not cached:
+            match = await od.match(r["match_id"])
+            if not metrics.is_parsed(match):
+                unparsed += 1
+                await od.request_parse(r["match_id"])
+                continue
+            p = metrics.find_player(match, account_id)
+            if p is not None and p.get("lane_role") == 2 and not p.get("is_roaming"):
+                m = metrics.compute_metrics(match, p, names, items)
+            if cache:
+                cache.save_metrics(account_id, r["match_id"], m)
+        if m is None:
             not_mid += 1
-            continue
-        ms.append(metrics.compute_metrics(match, p, names, items))
+        else:
+            ms.append(m)
     return ms, unparsed, not_mid
 
 
-async def build_trend(od, account_id, want=10):
+async def build_trend(od, account_id, want=10, cache=None):
     """Trend over the last `want` parsed ranked mid matches."""
-    ms, unparsed, not_mid = await mid_matches(od, account_id, want)
+    ms, unparsed, not_mid = await mid_matches(od, account_id, want, cache=cache)
     head = f"**Trend: {len(ms)} ranked mid matches** ({unparsed} unparsed, parse requested; {not_mid} non-mid skipped)"
     if not ms:
         raise OpenDotaError(head + "\nNo parsed ranked mid matches yet. Retry in a few minutes.")
@@ -116,21 +123,23 @@ async def build_draft(od, account_id, enemies, pool=None, top=3):
     return await _ask_validated(prompts.DRAFT_SYSTEM, payload)
 
 
-async def build_laneplan(od, account_id, hero, enemy=None, top=3, want=20):
-    """Lane plan for `hero` (mid) vs `enemy`, or vs the opponents the player met most often on that hero."""
+async def build_laneplan(od, account_id, hero, enemy=None, top=3, want=20, cache=None):
+    """Lane plan for `hero` (mid) vs `enemy` (comma separated ok; matches are fetched once), or vs the opponents the player met most often on that hero."""
     hid = await od.hero_id_by_name(hero)
     if hid is None:
         raise OpenDotaError(f"Unknown hero '{hero}'.")
     labels, names = await od.hero_labels(), await od.hero_names()
-    ms, unparsed, _ = await mid_matches(od, account_id, want, scan=60, hero_id=hid)
+    ms, unparsed, _ = await mid_matches(od, account_id, want, scan=60, cache=cache, hero_id=hid)
     if not ms and not enemy:
         raise OpenDotaError(f"No parsed ranked mid matches on {labels[hid]} yet ({unparsed} unparsed, parse requested).")
     seen = trend.by_opponent(ms)
     if enemy:
-        eid = await od.hero_id_by_name(enemy)
-        if eid is None:
-            raise OpenDotaError(f"Unknown hero '{enemy}'.")
-        opps = [eid]
+        opps = []
+        for e in (x.strip() for x in enemy.split(",") if x.strip()):
+            eid = await od.hero_id_by_name(e)
+            if eid is None:
+                raise OpenDotaError(f"Unknown hero '{e}'.")
+            opps.append(eid)
     else:
         opps = [await od.hero_id_by_name(k.removeprefix("npc_dota_hero_")) for k in list(seen)[:top]]
     glob, stats = await od.matchups(hid), await od.hero_stats()

@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS reviews (
     advice TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS match_metrics (
+    account_id INTEGER NOT NULL,
+    match_id INTEGER NOT NULL,
+    metrics TEXT,  -- NULL = parsed but not a usable mid game; don't refetch
+    PRIMARY KEY (account_id, match_id)
+);
 """
 
 
@@ -40,4 +46,18 @@ class DB:
             self._c.execute(
                 "INSERT INTO reviews (discord_id, account_id, match_id, hero, metrics, advice) VALUES (?,?,?,?,?,?)",
                 (discord_id, account_id, match_id, metrics.get("hero"), json.dumps(metrics), advice),
+            )
+
+    def get_metrics(self, account_id, match_id):
+        """(cached, metrics): cached False = never seen; metrics None = seen but skipped."""
+        row = self._c.execute(
+            "SELECT metrics FROM match_metrics WHERE account_id=? AND match_id=?", (account_id, match_id)
+        ).fetchone()
+        return (True, json.loads(row[0]) if row[0] else None) if row else (False, None)
+
+    def save_metrics(self, account_id, match_id, metrics):
+        with self._c:
+            self._c.execute(
+                "INSERT OR REPLACE INTO match_metrics VALUES (?,?,?)",
+                (account_id, match_id, json.dumps(metrics) if metrics else None),
             )

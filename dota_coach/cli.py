@@ -11,22 +11,24 @@ import os
 
 from dotenv import load_dotenv
 
+from .db import DB
 from .opendota import OpenDota, OpenDotaError
 from .review import advise, build_draft, build_laneplan, build_trend, fetch_metrics, resolve_player, to_account_id
 
 
 async def run(args):
     od = OpenDota(os.getenv("OPENDOTA_API_KEY"))
+    db = DB()
     try:
         if args.laneplan:
-            print(await build_laneplan(od, to_account_id(int(args.account)), args.laneplan, args.enemy or None))
+            print(await build_laneplan(od, to_account_id(int(args.account)), args.laneplan, args.enemy or None, cache=db))
             return
         if args.draft:
             split = lambda t: [x.strip() for x in t.split(",") if x.strip()]
             print(await build_draft(od, to_account_id(int(args.account)), split(args.draft), split(args.pool) or None))
             return
         if args.trend:
-            print(await build_trend(od, to_account_id(int(args.trend)), args.n))
+            print(await build_trend(od, to_account_id(int(args.trend)), args.n, cache=db))
             return
         if args.last:
             account_id = to_account_id(int(args.last))
