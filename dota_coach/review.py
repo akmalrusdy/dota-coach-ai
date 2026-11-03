@@ -1,7 +1,7 @@
 """Review pipeline shared by the Discord bot and the CLI (no Discord imports)."""
 import json
 
-from . import llm, metrics, prompts
+from . import llm, metrics, prompts, validate
 from .opendota import OpenDotaError
 
 STEAM64_BASE = 76561197960265728
@@ -38,4 +38,8 @@ async def advise(m):
         {"role": "system", "content": prompts.REVIEW_SYSTEM},
         {"role": "user", "content": "Metrics:\n" + json.dumps(m)},
     ])
-    return reply.content or "No advice generated."
+    advice = reply.content or "No advice generated."
+    bad = validate.unverified_numbers(advice, m)
+    if bad:
+        advice += f"\n-# Unverified numbers (not in the metrics): {', '.join(bad)}"
+    return advice
